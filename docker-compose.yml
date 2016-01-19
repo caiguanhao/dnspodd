@@ -10,3 +10,5 @@ app:
     - PROXYURL
   volumes:
     - '.:/go/src/github.com/caiguanhao/dnspodd'
+    - './tmp/github.com/google:/go/src/github.com/google'
+    - './tmp/golang.org:/go/src/golang.org'
