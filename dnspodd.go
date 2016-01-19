@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -26,6 +27,11 @@ const (
 )
 
 type (
+	Status struct {
+		Code      string `json:"code"`
+		CreatedAt string `json:"created_at"`
+		Message   string `json:"message"`
+	}
 	DomainList struct {
 		Domains []struct {
 			CnameSpeedup     string `json:"cname_speedup"`
@@ -61,11 +67,7 @@ type (
 			VipExpire     int `json:"vip_expire"`
 			VipTotal      int `json:"vip_total"`
 		} `json:"info"`
-		Status struct {
-			Code      string `json:"code"`
-			CreatedAt string `json:"created_at"`
-			Message   string `json:"message"`
-		} `json:"status"`
+		Status Status `json:"status"`
 	}
 
 	RecordList struct {
@@ -81,11 +83,7 @@ type (
 			SubDomains  string `json:"sub_domains"`
 		} `json:"info"`
 		Records []Record `json:"records"`
-		Status  struct {
-			Code      string `json:"code"`
-			CreatedAt string `json:"created_at"`
-			Message   string `json:"message"`
-		} `json:"status"`
+		Status  Status   `json:"status"`
 	}
 
 	Record struct {
@@ -127,7 +125,7 @@ func (t ByNormal) Less(i, j int) bool {
 	return t[i].Type < t[j].Type
 }
 
-func getListOfDomains() (error, *DomainList) {
+func getListOfDomains() (*DomainList, error) {
 	data := url.Values{
 		"login_email":    {DNSPOD_EMAIL},
 		"login_password": {DNSPOD_PASSWORD},
@@ -135,16 +133,22 @@ func getListOfDomains() (error, *DomainList) {
 	}
 	resp, err := http.PostForm("https://dnsapi.cn/Domain.List", data)
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	list := DomainList{}
 	err = json.Unmarshal(body, &list)
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
-	return nil, &list
+	if list.Status.Code != "1" {
+		return nil, errors.New(list.Status.Message)
+	}
+	return &list, nil
 }
 
 func getDomainRecordInfoById(id int) (*RecordList, error) {
@@ -159,10 +163,17 @@ func getDomainRecordInfoById(id int) (*RecordList, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	list := RecordList{}
-	err = json.NewDecoder(resp.Body).Decode(&list)
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+	list := RecordList{}
+	err = json.Unmarshal(body, &list)
+	if err != nil {
+		return nil, err
+	}
+	if list.Status.Code != "1" {
+		return nil, errors.New(list.Status.Message)
 	}
 	return &list, nil
 }
@@ -175,7 +186,7 @@ func isEnabled(input string) string {
 }
 
 func generateDNSTable() (*string, error) {
-	err, list := getListOfDomains()
+	list, err := getListOfDomains()
 	if err != nil {
 		return nil, err
 	}
