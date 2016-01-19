@@ -1,0 +1,12 @@
+app:
+  image: golang:1.5.0
+  command: 'sh -c "go get -v . && go build"'
+  working_dir: '/go/src/github.com/caiguanhao/dnspodd'
+  environment:
+    - DPEMAIL
+    - DPPASSWORD
+    - GHTOKEN
+    - GISTID
+    - PROXYURL
+  volumes:
+    - '.:/go/src/github.com/caiguanhao/dnspodd'
