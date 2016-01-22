@@ -24,6 +24,7 @@ import (
 const (
 	GIST_DNS_FILENAME = "DNS"
 	LINE_FORMAT       = "%-8s  %-20s  %-5s  %-6s  %-20s  %-15s  %s\n"
+	GIST_MAX_RETRIES  = 2
 )
 
 type (
@@ -242,7 +243,17 @@ func getOldDNSTable() (*string, error) {
 	if isVerbose {
 		log.Print("fetching list from github")
 	}
-	gist, _, err := githubClient.Gists.Get(GIST_ID)
+	var gist *github.Gist
+	var err error
+	for tried := 0; tried < GIST_MAX_RETRIES; tried++ {
+		gist, _, err = githubClient.Gists.Get(GIST_ID)
+		if err == nil {
+			break
+		}
+		if isVerbose {
+			log.Print("retrying fetching list...")
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -279,12 +290,13 @@ var githubClient *github.Client
 var isVerbose bool
 
 func init() {
+	flag.BoolVar(&isVerbose, "v", false, "")
 	flag.BoolVar(&isVerbose, "verbose", false, "")
 	flag.Usage = func() {
 		fmt.Println(path.Base(os.Args[0]), "- Print DNSPOD table changes")
 		fmt.Println()
 		fmt.Println("Options:")
-		fmt.Println("    --verbose    Show more output")
+		fmt.Println("    -v, --verbose    Show more output")
 		fmt.Println()
 		fmt.Println("Source: https://github.com/caiguanhao/dnspodd")
 	}
@@ -348,20 +360,36 @@ func main() {
 	fmt.Println()
 	fmt.Println(strings.TrimSpace(diff))
 
-	gist, _, err := githubClient.Gists.Edit(GIST_ID, &github.Gist{
+	if isVerbose {
+		log.Printf("updating table...")
+	}
+	var gist *github.Gist
+	var err error
+
+	updated := github.Gist{
 		Files: map[github.GistFilename]github.GistFile{
 			GIST_DNS_FILENAME: github.GistFile{
 				Content: newTable,
 			},
 		},
-	})
+	}
+
+	for tried := 0; tried < GIST_MAX_RETRIES; tried++ {
+		gist, _, err = githubClient.Gists.Edit(GIST_ID, &updated)
+		if err == nil {
+			break
+		}
+		if isVerbose {
+			log.Print("retrying updating table...")
+		}
+	}
 
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	if isVerbose {
-		log.Printf("updated (%s)", *gist.HTMLURL)
+		log.Printf("table updated (%s)", *gist.HTMLURL)
 	} else {
 		fmt.Println()
 		fmt.Printf("For more info, visit %s\n", *gist.HTMLURL)
