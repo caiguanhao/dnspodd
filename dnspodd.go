@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/caiguanhao/dnspodd/vendor/diffmatchpatch"
 
@@ -22,9 +23,10 @@ import (
 )
 
 const (
-	GIST_DNS_FILENAME = "DNS"
-	LINE_FORMAT       = "%-8s  %-20s  %-5s  %-6s  %-20s  %-15s  %s\n"
-	GIST_MAX_RETRIES  = 2
+	GIST_DNS_FILENAME   = "DNS"
+	LINE_FORMAT         = "%-8s  %-20s  %-5s  %-6s  %-20s  %-15s  %s\n"
+	DNSPODD_MAX_RETRIES = 2
+	GIST_MAX_RETRIES    = 2
 )
 
 type (
@@ -251,7 +253,7 @@ func getOldDNSTable() (*string, error) {
 			break
 		}
 		if isVerbose {
-			log.Print("retrying fetching list...")
+			log.Print("retrying fetching list")
 		}
 	}
 	if err != nil {
@@ -327,31 +329,44 @@ func main() {
 	var oldTableErr error
 	var newTableErr error
 
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		oldTable, oldTableErr = getOldDNSTable()
-	}()
-	go func() {
-		defer wg.Done()
-		newTable, newTableErr = generateDNSTable()
-	}()
-	wg.Wait()
-
-	if oldTableErr != nil {
-		log.Fatalln(oldTableErr)
-	}
-
-	if newTableErr != nil {
-		log.Fatalln(newTableErr)
-	}
-
-	if strings.Compare(*oldTable, *newTable) == 0 {
+	for tried := 0; tried < DNSPODD_MAX_RETRIES; tried++ {
 		if isVerbose {
-			log.Printf("found no changes to the DNS table")
+			log.Print("fetching dns table")
 		}
-		return
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			oldTable, oldTableErr = getOldDNSTable()
+		}()
+		go func() {
+			defer wg.Done()
+			newTable, newTableErr = generateDNSTable()
+
+		}()
+		wg.Wait()
+
+		if oldTableErr != nil {
+			log.Fatalln(oldTableErr)
+		}
+
+		if newTableErr != nil {
+			log.Fatalln(newTableErr)
+		}
+
+		if strings.Compare(*oldTable, *newTable) == 0 {
+			if isVerbose {
+				log.Printf("found no changes to the DNS table")
+			}
+			return
+		}
+
+		if isVerbose {
+			log.Print("retrying fetching dns table")
+		}
+
+		time.Sleep(time.Second * 5)
 	}
 
 	diff, diffCount := makeDNSTableDiff(*oldTable, *newTable)
@@ -361,7 +376,7 @@ func main() {
 	fmt.Println(strings.TrimSpace(diff))
 
 	if isVerbose {
-		log.Printf("updating table...")
+		log.Printf("updating table")
 	}
 	var gist *github.Gist
 	var err error
@@ -380,7 +395,7 @@ func main() {
 			break
 		}
 		if isVerbose {
-			log.Print("retrying updating table...")
+			log.Print("retrying updating table")
 		}
 	}
 
